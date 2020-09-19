@@ -1,0 +1,20 @@
+Options -Indexes
+
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+</IfModule>
+
+# Deny access to unwanted subdirectories
+<Files vendor/*>
+    deny from all
+</Files>
+
+# Deny access to unwanted subdirectories
+<Files "composer.json composer.lock autoload.php dispatch.php envmode.php">
+    deny from all
+</Files>
+
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*?)(?:\/(.*))?$ /dispatch.php?controller=$1&action=$2 [NC,L,QSA]
