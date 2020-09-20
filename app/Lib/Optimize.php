@@ -39,47 +39,76 @@ abstract class Optimize {
 
     public static function processAutoQuality(string $path, array $settings = [])
     {
-        $qualities = [55, 65, 75, 85, 90];
-        $idealDifferencePercentage = 0.00036;
-        $maxDifferencePercentage = 0.000425;
+        $originalFilesize = filesize($path);
+        $qualities = [55, 65, 75, 85];
+        $idealDifference = 0.00036;
+        $acceptableDifference = 0.000425;
         $weightDifferenceThreshold = 0.15; # An ideal image that is over 15% larger than an acceptable one will not be used, returning the smaller acceptable image instead
         $previousWasAcceptable = false;
+        $previousPath = null;
         $bestPath = null;
-        $tmpPaths = [];
+        $attempts = [];
 
+        # Try every quality setting from the lowest to the highest, looking for one that matches our ideal/acceptable difference percentage.
+        # If an acceptable one is found first, the next quality level will be checked to see if it's ideal and if the weight isn't much bigger (based on $weightDifferenceThreshold)
+        # If an ideal one is found first, it is considered the best and tests stop there.
         foreach ($qualities as $quality) {
             $settings['quality'] = $quality;
             $processedPath = static::process($path, $settings, false);
             $difference = static::compareImages($path, $processedPath);
+            $attempts[] = ['path' => $processedPath, 'difference' => $difference];
 
-            if ($difference <= $idealDifferencePercentage) {
-                if ($previousWasAcceptable && filesize($tmpPaths[count($tmpPaths) - 1]) / filesize($processedPath) <= (1 - $weightDifferenceThreshold)) {
-                    $bestPath = array_pop($tmpPaths);
-                    $tmpPaths[] = $processedPath;
+            if ($difference <= $idealDifference) {
+                if ($previousWasAcceptable && filesize($previousPath) / filesize($processedPath) <= (1 - $weightDifferenceThreshold)) {
+                    $bestPath = $previousPath;
                     break;
                 } else {
                     $bestPath = $processedPath;
                     break;
                 }
-            } else if ($difference <= $maxDifferencePercentage) {
+            } else if ($difference <= $acceptableDifference) {
                 $previousWasAcceptable = true;
             } else if ($previousWasAcceptable) {
-                $bestPath = array_pop($tmpPaths);
+                $bestPath = $previousPath;
                 break;
             }
 
-            $tmpPaths[] = $processedPath;
+            $previousPath = $processedPath;
         }
 
+        # If no acceptable images are found, compare the difference percentage and weight of the results we have.
+        # The lower quality might still be visually similar to the high quality, but with a much lower filesize.
         if (!$bestPath) {
-            $bestPath = array_pop($tmpPaths);
+            $highestQuality = $attempts[count($attempts) - 1];
+
+            foreach ($attempts as $attempt) {
+                if ($attempt['path'] == $highestQuality['path']) {
+                    continue;
+                }
+
+                // Require at least 30% filesize savings for at most 10% higher difference percentage
+                if (($attempt['difference'] / $highestQuality['difference']) <= 1.1 && (filesize($attempt['path']) / filesize($highestQuality['path'])) >= 1.3) {
+                    $bestPath = $attempt['path'];
+                    break;
+                }
+            }
+
+            if (!$bestPath) {
+                $bestPath = $highestQuality['path'];
+            }
         }
 
-        # Clean test images
-        foreach ($tmpPaths as $tmpPath) {
-            if ($tmpPath != $bestPath) {
-                unlink($tmpPath);
+        # Delete unused test images
+        foreach ($attempts as $attempt) {
+            if ($attempt['path'] != $bestPath) {
+                unlink($attempt['path']);
             }
+        }
+
+        # If the optimized image is larger than the original, return the original
+        if (($originalFilesize * 0.99) < filesize($bestPath)) {
+            unlink($bestPath);
+            $bestPath = $path;
         }
 
         return $bestPath;
