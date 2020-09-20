@@ -9,6 +9,8 @@ require_once 'vendor/autoload.php';
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 $dotenv->load();
 
+require_once 'rollbar.php';
+
 $controllerName = ucfirst(preg_replace('~\W~', '', $_GET['controller'] ?? null)) . 'Controller';
 $controllerClassname = 'App\\Controller\\' . $controllerName;
 
