@@ -86,8 +86,10 @@ abstract class Optimize {
                     continue;
                 }
 
-                // Require at least 30% filesize savings for at most 10% higher difference percentage
-                if (($attempt['difference'] / $highestQuality['difference']) <= 1.1 && (filesize($attempt['path']) / filesize($highestQuality['path'])) >= 1.3) {
+                // Require at least [15% or 15kb] filesize savings for at most 15% higher difference percentage
+                $visualDifference = 1 - $attempt['difference'] / $highestQuality['difference'];
+                $filesizeSavingsPercentage = 1 - filesize($attempt['path']) / filesize($highestQuality['path']);
+                if ($visualDifference <= .15 && ($filesizeSavingsPercentage >= .15 || $filesizeSavingsPercentage * filesize($attempt['path']) > (1024 * 15))) {
                     $bestPath = $attempt['path'];
                     break;
                 }
