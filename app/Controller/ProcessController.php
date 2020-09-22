@@ -3,18 +3,21 @@
 namespace App\Controller;
 
 use App\Lib\Controller;
+use App\Lib\Convert;
 use App\Lib\Resize;
 use App\Lib\Optimize;
 use App\Lib\ColorProfile;
 
 class ProcessController extends Controller {
 
-    protected $uploadedFile;
     protected $resolutionsData;
     protected $settings;
+    protected $baseImagePath;
+    protected $baseImageMimeType;
 
     public function __construct() {
         $this->validatePayload();
+        $this->preconvertRaw();
         $this->prepareSettings();
 
         $images = $this->prepareImageResolutions();
@@ -26,13 +29,42 @@ class ProcessController extends Controller {
 
     protected function validatePayload()
     {
-        $this->uploadedFile = $_FILES['image'] ?? null;
+        $imageUrl = $_POST['url'] ?? null;
+
+        if ($imageUrl) {
+            $this->baseImagePath = tempnam('/tmp', 'img');
+            file_put_contents($this->baseImagePath, file_get_contents($imageUrl));
+        } else {
+            $uploadedFile = $_FILES['image'] ?? null;
+            $this->baseImagePath = $uploadedFile ? $uploadedFile['tmp_name'] : null;
+        }
+
         $this->resolutionsData = json_decode($_POST['devices'] ?? 'null', true);
 
-        if (!$this->uploadedFile || !$this->resolutionsData) {
+        if (!$this->baseImagePath || !file_get_contents($this->baseImagePath) || !$this->resolutionsData) {
             return $this->jsonResponse(['error' => 'invalid_payload']);
-        } else if (!exif_imagetype($this->uploadedFile['tmp_name'])) {
+        }
+
+        $this->baseImageMimeType = mime_content_type($this->baseImagePath);
+
+        if (!exif_imagetype($this->baseImagePath) && !in_array($this->baseImageMimeType, ['image/heic'])) {
             return $this->jsonResponse(['error' => 'not_optimizable_file']);
+        }
+    }
+
+    protected function preconvertRaw()
+    {
+        # RAW images from .NEF or .DNG files are often interpreted as .tiff due to their built-in image preview
+        # Check if dcraw is able to decode it as a raw image; if it is, it's a raw image, and dcraw's decoded image should be used instead
+        if ($this->baseImageMimeType == 'image/tiff') {
+            $imagePath = $this->baseImagePath;
+            $dcrawOutput = `dcraw -w $imagePath`;
+
+            # No responses means no errors: the raw image has been decoded!
+            if (!trim($dcrawOutput)) {
+                unlink($imagePath);
+                $this->baseImagePath .= '.ppm';
+            }
         }
     }
 
@@ -46,7 +78,7 @@ class ProcessController extends Controller {
 
     protected function prepareImageResolutions()
     {
-        $baseImageInfo = getimagesize($this->uploadedFile['tmp_name']);
+        $baseImageInfo = getimagesize($this->baseImagePath);
         $images = [];
 
         foreach ($this->resolutionsData as $device => $sizeData) {
@@ -71,7 +103,7 @@ class ProcessController extends Controller {
                     ],
                 ];
 
-                if ($baseImageInfo[0] < $sizeData['width'] || $baseImageInfo[1] < $sizeData['height']) {
+                if ($baseImageInfo && ($baseImageInfo[0] < $sizeData['width'] || $baseImageInfo[1] < $sizeData['height'])) {
                     $images[$key]['public']['error'] = 'base_image_too_small';
                 }
             }
@@ -82,13 +114,15 @@ class ProcessController extends Controller {
 
     protected function processImages(&$images)
     {
+        $baseImagePath = Convert::process($this->baseImagePath);
+
         foreach ($images as $key => $image) {
             if ($image['public']['error'] ?? null) {
-                continue;
+                #continue;
             }
 
             $settings = array_merge($this->settings, $image['settings']);
-            $imagePath = Resize::process($this->uploadedFile['tmp_name'], $settings, false);
+            $imagePath = Resize::process($baseImagePath, $settings, false);
 
             if ($settings['quality'] == 'auto') {
                 $imagePath = Optimize::processAutoQuality($imagePath, $settings, false);
@@ -97,7 +131,7 @@ class ProcessController extends Controller {
             }
 
             try {
-                ColorProfile::ApplyFromTo($this->uploadedFile['tmp_name'], $imagePath);
+                ColorProfile::ApplyFromTo($this->baseImagePath, $imagePath);
             } catch (\Exception $e) { }
 
             $imageType = exif_imagetype($imagePath);
