@@ -35,11 +35,6 @@ class SearchController extends Controller {
         return $this->jsonResponse($response);
     }
 
-    public function download()
-    {
-        Unsplash::triggerDownload($_GET['id'] ?? null);
-    }
-
     protected function formatPhotosResponse($unsplashResults)
     {
         $response = [];

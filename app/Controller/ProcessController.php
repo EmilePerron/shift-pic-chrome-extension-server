@@ -7,6 +7,7 @@ use App\Lib\Convert;
 use App\Lib\Resize;
 use App\Lib\Optimize;
 use App\Lib\ColorProfile;
+use App\Lib\Unsplash;
 
 class ProcessController extends Controller {
 
@@ -34,6 +35,12 @@ class ProcessController extends Controller {
         if ($imageUrl) {
             $this->baseImagePath = tempnam('/tmp', 'img');
             file_put_contents($this->baseImagePath, file_get_contents($imageUrl));
+
+            if ($unsplashId = ($_POST['imageUnsplashId'] ?? null)) {
+                try {
+                    Unsplash::triggerDownload($unsplashId);
+                } catch (\Exception $e) {}
+            }
         } else {
             $uploadedFile = $_FILES['image'] ?? null;
             $this->baseImagePath = $uploadedFile ? $uploadedFile['tmp_name'] : null;
