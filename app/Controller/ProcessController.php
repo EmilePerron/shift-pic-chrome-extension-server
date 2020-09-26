@@ -8,6 +8,8 @@ use App\Lib\Resize;
 use App\Lib\Optimize;
 use App\Lib\ColorProfile;
 use App\Lib\Unsplash;
+use App\Lib\Usage;
+use App\Lib\License;
 
 class ProcessController extends Controller {
 
@@ -15,8 +17,10 @@ class ProcessController extends Controller {
     protected $settings;
     protected $baseImagePath;
     protected $baseImageMimeType;
+    protected $licenseType;
 
     public function __construct() {
+        $this->validateLicense();
         $this->validatePayload();
         $this->preconvertRaw();
         $this->prepareSettings();
@@ -25,7 +29,29 @@ class ProcessController extends Controller {
         $this->processImages($images);
         $response = $this->buildPublicResponse($images);
 
+        Usage::increment($_POST['license']);
+
         return $this->jsonResponse($response);
+    }
+
+    protected function validateLicense()
+    {
+        $license = $_POST['license'] ?? null;
+
+        if (!$license) {
+            return $this->jsonResponse(['error' => 'no_license']);
+        }
+
+        $type = License::getType($license, true);
+        if (!$type) {
+            return $this->jsonResponse(['error' => 'unknown_license']);
+        }
+
+        if (Usage::isMaxed($license)) {
+            return $this->jsonResponse(['error' => 'usage_maxed']);
+        }
+
+        $this->licenseType = $type;
     }
 
     protected function validatePayload()
@@ -54,6 +80,10 @@ class ProcessController extends Controller {
 
         $this->baseImageMimeType = mime_content_type($this->baseImagePath);
 
+        if ($this->licenseType == 'image/heic' && $this->licenseType == 'free') {
+            return $this->jsonResponse(['error' => 'image_format_upgrade_required']);
+        }
+
         if (!exif_imagetype($this->baseImagePath) && !in_array($this->baseImageMimeType, ['image/heic'])) {
             return $this->jsonResponse(['error' => 'not_optimizable_file']);
         }
@@ -69,6 +99,12 @@ class ProcessController extends Controller {
 
             # No responses means no errors: the raw image has been decoded!
             if (!trim($dcrawOutput)) {
+                if ($this->licenseType == 'free') {
+                    unlink($imagePath);
+                    unlink($this->baseImagePath . '.ppm');
+                    return $this->jsonResponse(['error' => 'image_format_upgrade_required']);
+                }
+
                 unlink($imagePath);
                 $this->baseImagePath .= '.ppm';
             }
