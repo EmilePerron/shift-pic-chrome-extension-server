@@ -50,6 +50,28 @@ class LicenseController extends Controller {
         return $this->jsonResponse(['type' => License::getType($license)]);
     }
 
+    public function validateChange()
+    {
+        $currentLicense = $_POST['currentLicense'] ?? null;
+        $license = $_POST['license'] ?? null;
+
+        if (substr($currentLicense, 0, 5) == 'free_' && substr($license, 0, 5) == 'free_') {
+            return $this->jsonResponse(['error' => 'unknown_license']);
+        }
+
+        if (substr($currentLicense, 0, 5) != 'free_' && substr($license, 0, 5) == 'free_') {
+            return $this->jsonResponse(['error' => 'manual_downgrade_not_allowed']);
+        }
+
+        $type = License::getType($license, true);
+
+        if (!$type) {
+            return $this->jsonResponse(['error' => 'unknown_license']);
+        }
+
+        return $this->jsonResponse(['license' => $license, 'type' => $type]);
+    }
+
     public function free()
     {
         return $this->jsonResponse(['license' => 'free_' . bin2hex(random_bytes(27))]);
