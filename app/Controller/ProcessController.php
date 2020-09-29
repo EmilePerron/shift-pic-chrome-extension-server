@@ -10,6 +10,7 @@ use App\Lib\ColorProfile;
 use App\Lib\Unsplash;
 use App\Lib\Usage;
 use App\Lib\License;
+use App\Lib\Image;
 
 class ProcessController extends Controller {
 
@@ -80,7 +81,11 @@ class ProcessController extends Controller {
 
         $this->baseImageMimeType = mime_content_type($this->baseImagePath);
 
-        if ($this->licenseType == 'image/heic' && $this->licenseType == 'free') {
+        if ($this->baseImageMimeType == 'image/heic' && $this->licenseType == 'free') {
+            return $this->jsonResponse(['error' => 'image_format_upgrade_required']);
+        }
+
+        if ($this->baseImageMimeType == 'image/gif' && Image::isAnimatedGif($this->baseImagePath) && in_array($this->licenseType, ['free', 'starter'])) {
             return $this->jsonResponse(['error' => 'image_format_upgrade_required']);
         }
 
