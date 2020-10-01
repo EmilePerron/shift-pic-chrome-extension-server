@@ -23,10 +23,10 @@ abstract class License {
 
                 foreach ($subscriptions as $subscription) {
                     try {
-                        $fullfillment = $subscription['fulfillments'];
-                        $fullfillment = array_pop($fullfillment);
+                        $fulfillment = $subscription['fulfillments'];
+                        $fulfillment = array_pop($fulfillment);
 
-                        if ($license != ($fullfillment[0]['license'] ?? null)) {
+                        if ($license != ($fulfillment[0]['license'] ?? null)) {
                             continue;
                         }
 
@@ -55,9 +55,13 @@ abstract class License {
             $subscriptionId = $order['items'][0]['subscription'];
             $subscription = Subscription::find($subscriptionId);
             $type = $subscription['product'] ?? 'free';
-            $fullfillment = $subscription['fulfillments'];
-            $fullfillment = array_pop($fullfillment);
-            $license = $fullfillment[0]['license'] ?? null;
+
+            foreach ($subscription['fulfillments'] as $key => $possiblefulfillment) {
+                if (strpos($key, '_license_') !== false && isset($possiblefulfillment[0]['license'])) {
+                    $license = $possiblefulfillment[0]['license'];
+                    break;
+                }
+            }
 
             if ($license && $type && ($subscription['state'] ?? null) == 'active') {
                 static::setLicenseCache($license, $type);

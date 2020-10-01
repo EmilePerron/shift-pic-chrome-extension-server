@@ -54,11 +54,26 @@ abstract class Cache
 		return $value;
 	}
 
+	public static function remove($key)
+	{
+		$key = static::getCacheKey($key);
+		return static::getFilesystemCache()->delete($key);
+	}
+
+	public static function prune()
+	{
+		return static::getFilesystemCache()->prune();
+	}
+
+	protected static function getCacheKey($key)
+	{
+		# Standarize the key by removing reserved characters
+		return str_replace(['{', '}', '(', ')', '/', '\\', '@', ':'], 'RESERVED', $key);
+	}
+
 	protected static function getCache($key = null)
     {
-		# Standarize the key by removing reserved characters
-		$key = str_replace(['{', '}', '(', ')', '/', '\\', '@', ':'], 'RESERVED', $key);
-
+		$key = static::getCacheKey($key);
 		return static::getFilesystemCache()->getItem($key);
 	}
 
