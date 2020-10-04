@@ -5,6 +5,8 @@ namespace App\Controller;
 use App\Lib\Controller;
 use App\Lib\Cache;
 use App\Lib\License;
+use Emileperron\FastSpring\FastSpring;
+use Emileperron\FastSpring\Entity\Product;
 
 class LicenseController extends Controller {
 
@@ -75,6 +77,59 @@ class LicenseController extends Controller {
     public function free()
     {
         return $this->jsonResponse(['license' => 'free_' . bin2hex(random_bytes(27))]);
+    }
+
+    public function change()
+    {
+        $license = $_POST['license'] ?? null;
+        $desiredPlan = $_POST['plan'] ?? null;
+        $newLicense = null;
+
+        if (!$license || !$desiredPlan) {
+            return $this->jsonResponse(['error' => 'invalid_payload']);
+        }
+
+        FastSpring::initialize($_ENV['fastspring_api_username'], $_ENV['fastspring_api_password']);
+        $desiredProduct = Product::find($desiredPlan);
+        $currentSubscription = License::getSubscription($license);
+        $currentPlan = License::getType($license, true);
+
+        if (!$desiredProduct || !$currentSubscription || !$currentPlan) {
+            return $this->jsonResponse(['error' => 'invalid_payload']);
+        }
+
+        $payload = null;
+        $changeType = License::getChangeType($currentPlan, $desiredPlan);
+
+        if ($desiredPlan == 'free') {
+            $response = FastSpring::delete('subscriptions', [$currentSubscription['id']]);
+        } else {
+            $response = FastSpring::post('subscriptions', [
+                'subscriptions' => [
+                    [
+                        'subscription' => $currentSubscription['id'],
+                        'product' => $desiredPlan,
+                        'quantity' => 1,
+                        'prorate' => $changeType == 'upgrade',
+                    ]
+                ]
+            ]);
+        }
+
+        if (isset($response['subscriptions'][0]['result']) && $response['subscriptions'][0]['result'] == 'success') {
+            License::clearAllCaches($license);
+
+            if ($changeType == 'downgrade') {
+                License::setLicenseCache($license, $currentPlan, $currentSubscription['nextInSeconds'] - time());
+            }
+        } else {
+            return $this->jsonResponse(['error' => 'fastspring_error']);
+        }
+
+        return $this->jsonResponse([
+            'license' => $license,
+            'plan' => $desiredPlan,
+        ]);
     }
 
 }

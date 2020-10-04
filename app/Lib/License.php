@@ -8,37 +8,41 @@ use Emileperron\FastSpring\Entity\Subscription;
 
 abstract class License {
 
+    public static function getSubscription($license)
+    {
+        if ($cachedSubscription = static::getCachedSubscription($license)) {
+            return $cachedSubscription;
+        }
+
+        try {
+            FastSpring::initialize($_ENV['fastspring_api_username'], $_ENV['fastspring_api_password']);
+            $subscriptions = Subscription::findBy(['status' => 'active']);
+
+            foreach ($subscriptions as $subscription) {
+                try {
+                    if ($license == static::getLicenseFromSubscription($subscription)) {
+                        return static::setSubscriptionCache($license, $subscription);
+                    }
+                } catch (\Exception $e) { }
+            }
+        } catch (\Exception $e) { }
+
+        return null;
+    }
+
     public static function getType($license, bool $nullIfNone = false)
     {
         $type = $nullIfNone ? null : 'free';
 
-        if ($license && substr($license, 0, 5) == 'free_') {
+        VAR_DUMP(static::getSubscription($license));
+
+        if (!$license || substr($license, 0, 5) == 'free_') {
             $type = 'free';
         } else if ($cachedType = static::getCachedLicenseType($license)) {
             $type = $cachedType;
-        } else {
-            try {
-                FastSpring::initialize($_ENV['fastspring_api_username'], $_ENV['fastspring_api_password']);
-                $subscriptions = Subscription::findBy(['status' => 'active']);
-
-                foreach ($subscriptions as $subscription) {
-                    try {
-                        $fulfillment = $subscription['fulfillments'];
-                        $fulfillment = array_pop($fulfillment);
-
-                        if ($license != ($fulfillment[0]['license'] ?? null)) {
-                            continue;
-                        }
-
-                        $type = $subscription['product'] ?? 'free';
-                        static::setLicenseCache($license, $type);
-                    } catch (\Exception $e) {
-
-                    }
-                }
-            } catch (\Exception $e) {
-                throw $e;
-            }
+        } else if ($subscription = static::getSubscription($license)) {
+            $type = $subscription['product'] ?? 'free';
+            static::setLicenseCache($license, $type);
         }
 
         return $type;
@@ -55,13 +59,7 @@ abstract class License {
             $subscriptionId = $order['items'][0]['subscription'];
             $subscription = Subscription::find($subscriptionId);
             $type = $subscription['product'] ?? 'free';
-
-            foreach ($subscription['fulfillments'] as $key => $possiblefulfillment) {
-                if (strpos($key, '_license_') !== false && isset($possiblefulfillment[0]['license'])) {
-                    $license = $possiblefulfillment[0]['license'];
-                    break;
-                }
-            }
+            $license = static::getLicenseFromSubscription($subscription);
 
             if ($license && $type && ($subscription['state'] ?? null) == 'active') {
                 static::setLicenseCache($license, $type);
@@ -73,17 +71,52 @@ abstract class License {
         return ['license' => $license, 'type' => $type];
     }
 
+    public static function getChangeType($from, $to)
+    {
+        $plans = ['free', 'starter', 'premium', 'enterprise'];
+        return array_search($from, $plans) > array_search($to, $plans) ? 'downgrade' : 'upgrade';
+    }
+
+    public static function clearAllCaches($license)
+    {
+        $cacheKey = static::cacheKey($license);
+        Cache::remove($cacheKey);
+        Cache::remove('subscription_' . $cacheKey);
+    }
+
+    protected static function getLicenseFromSubscription($subscription)
+    {
+        foreach ($subscription['fulfillments'] as $key => $possiblefulfillment) {
+            if (strpos($key, '_license_') !== false && isset($possiblefulfillment[0]['license'])) {
+                return $possiblefulfillment[0]['license'];
+                break;
+            }
+        }
+
+        return null;
+    }
+
     protected static function cacheKey($license) {
         return 'license_' . md5($license);
     }
 
-    protected static function setLicenseCache($license, $type)
+    protected static function setLicenseCache($license, $type, $duration = 86400)
     {
-        Cache::set(static::cacheKey($license), $type, 86400);
+        return Cache::set(static::cacheKey($license), $type, $duration);
     }
 
     protected static function getCachedLicenseType($license)
     {
         return Cache::get(static::cacheKey($license));
+    }
+
+    protected static function setSubscriptionCache($license, $subscription)
+    {
+        return Cache::set('subscription_' . static::cacheKey($license), $subscription, 86400);
+    }
+
+    protected static function getCachedSubscription($license)
+    {
+        return Cache::get('subscription_' . static::cacheKey($license));
     }
 }
