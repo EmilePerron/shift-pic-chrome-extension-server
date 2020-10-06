@@ -90,37 +90,53 @@ class LicenseController extends Controller {
         }
 
         FastSpring::initialize($_ENV['fastspring_api_username'], $_ENV['fastspring_api_password']);
-        $desiredProduct = Product::find($desiredPlan);
-        $currentSubscription = License::getSubscription($license);
+        $currentSubscription = License::getSubscriptionFromLicense($license);
         $currentPlan = License::getType($license, true);
+        $changeType = License::getChangeType($currentPlan, $desiredPlan);
 
-        if (!$desiredProduct || !$currentSubscription || !$currentPlan) {
+        if (!$currentSubscription || !$currentPlan) {
             return $this->jsonResponse(['error' => 'invalid_payload']);
         }
 
-        $payload = null;
-        $changeType = License::getChangeType($currentPlan, $desiredPlan);
-
         if ($desiredPlan == 'free') {
-            $response = FastSpring::delete('subscriptions', [$currentSubscription['id']]);
+            try {
+                $response = FastSpring::delete('subscriptions', [$currentSubscription['id']]);
+            } catch (\Exception $e) {
+                if (strpos($e->getMessage(), 'The subscription is already canceled') !== false) {
+                    return $this->jsonResponse([
+                        'license' => $license,
+                        'plan' => $desiredPlan,
+                    ]);
+                }
+            }
         } else {
-            $response = FastSpring::post('subscriptions', [
-                'subscriptions' => [
-                    [
-                        'subscription' => $currentSubscription['id'],
-                        'product' => $desiredPlan,
-                        'quantity' => 1,
-                        'prorate' => $changeType == 'upgrade',
+            try {
+                $desiredProduct = Product::find($desiredPlan);
+
+                if (!$desiredProduct) {
+                    return $this->jsonResponse(['error' => 'invalid_payload']);
+                }
+
+                $response = FastSpring::post('subscriptions', [
+                    'subscriptions' => [
+                        [
+                            'subscription' => $currentSubscription['id'],
+                            'product' => $desiredPlan,
+                            'quantity' => 1,
+                            'prorate' => $changeType == 'upgrade',
+                        ]
                     ]
-                ]
-            ]);
+                ]);
+            } catch (\Exception $e)  {}
         }
 
         if (isset($response['subscriptions'][0]['result']) && $response['subscriptions'][0]['result'] == 'success') {
             License::clearAllCaches($license);
 
             if ($changeType == 'downgrade') {
-                License::setLicenseCache($license, $currentPlan, $currentSubscription['nextInSeconds'] - time());
+                License::setDowngradeCache($license, $currentPlan, $currentSubscription['nextInSeconds'] - time());
+            } else {
+                License::setDowngradeCache($license, null, 1);
             }
         } else {
             return $this->jsonResponse(['error' => 'fastspring_error']);
