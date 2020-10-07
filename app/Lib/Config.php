@@ -6,7 +6,7 @@ abstract class Config {
 
     protected static $configs = null;
 
-    protected function loadConfig($file)
+    public static function loadConfig($file)
     {
         if (self::$configs === null) {
             self::$configs = [];
@@ -22,9 +22,9 @@ abstract class Config {
         }
     }
 
-    protected function get($file, $key = null, $fallback = null)
+    public static function get($file, $key = null, $fallback = null)
     {
-        $this->loadConfig($file);
+        static::loadConfig($file);
         $data = self::$configs[$file];
 
         if ($key !== null) {
