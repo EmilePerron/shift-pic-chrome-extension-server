@@ -165,19 +165,30 @@ class ProcessController extends Controller {
         $baseImagePath = Convert::process($this->baseImagePath);
 
         foreach ($images as $key => $image) {
-            if ($image['public']['error'] ?? null) {
-                #continue;
+            if (($image['public']['error'] ?? null) && $image['public']['error'] != 'base_image_too_small') {
+                continue;
             }
 
             $settings = array_merge($this->settings, $image['settings']);
-            $imagePath = Resize::process($baseImagePath, $settings, false);
 
+            # Resize
+            if (($image['public']['error'] ?? null) == 'base_image_too_small') {
+                # For images that are smaller than the desired resolution, skip resizing
+                $imagePath = tempnam('/tmp', 'img');
+                file_put_contents($imagePath, file_get_contents($baseImagePath));
+                unset($images[$key]['public']['error']);
+            } else {
+                $imagePath = Resize::process($baseImagePath, $settings, false);
+            }
+
+            # Optimize
             if ($settings['quality'] == 'auto') {
                 $imagePath = Optimize::processAutoQuality($imagePath, $settings, false);
             } else {
                 Optimize::process($imagePath, $settings, true);
             }
 
+            # Fix color profile
             try {
                 ColorProfile::ApplyFromTo($this->baseImagePath, $imagePath);
             } catch (\Exception $e) { }

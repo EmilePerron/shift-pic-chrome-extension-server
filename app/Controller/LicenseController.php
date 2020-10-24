@@ -57,8 +57,8 @@ class LicenseController extends Controller {
         $currentLicense = $_POST['currentLicense'] ?? null;
         $license = $_POST['license'] ?? null;
 
-        if (substr($currentLicense, 0, 5) == 'free_' && substr($license, 0, 5) == 'free_') {
-            return $this->jsonResponse(['error' => 'unknown_license']);
+        if ($currentLicense != $license && substr($currentLicense, 0, 5) == 'free_' && substr($license, 0, 5) == 'free_') {
+            return $this->jsonResponse(['error' => 'cannot_change_free_license']);
         }
 
         if (substr($currentLicense, 0, 5) != 'free_' && substr($license, 0, 5) == 'free_') {
