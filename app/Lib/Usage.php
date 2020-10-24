@@ -5,18 +5,21 @@ namespace App\Lib;
 abstract class Usage {
 
     const MAX_USAGE = [
-        'free' => 15,
-        'starter' => 40,
-        'premium' => 150,
-        'enterprise' => 500
+        'free' => 25, # 15
+        'starter' => 75, # 40
+        'premium' => 500, # 150
+        'enterprise' => 2500 # 500
     ];
+
+    public static function getMax($license)
+    {
+        $licenseType = License::getType($license);
+        return static::MAX_USAGE[$licenseType];
+    }
 
     public static function isMaxed($license)
     {
-        $licenseType = License::getType($license);
-        $max = static::MAX_USAGE[$licenseType];
-
-        return static::getCurrent($license) >= $max;
+        return static::getCurrent($license) >= static::getMax($license);
     }
 
     public static function increment($license)
