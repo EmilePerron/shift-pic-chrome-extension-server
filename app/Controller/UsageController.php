@@ -11,6 +11,6 @@ class UsageController extends Controller {
     public function get()
     {
         $license = $_POST['license'] ?? null;
-        return $this->jsonResponse(['usage' => Usage::getCurrent($license)]);
+        return $this->jsonResponse(['usage' => Usage::getCurrent($license), 'max' => Usage::getMax($license)]);
     }
 }
