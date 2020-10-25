@@ -48,6 +48,18 @@ abstract class Optimize {
         $previousPath = null;
         $bestPath = null;
         $attempts = [];
+        $isSmallImage = false;
+
+        # For smaller images, the difference level is more strict, as the visual differences are much more obvious than for larger images
+        if (min($settings['width'], $settings['height']) <= 200 && max($settings['width'], $settings['height']) <= 250) {
+            array_unshift($qualities);
+            array_unshift($qualities);
+            $idealDifference = 0.000125;
+            $acceptableDifference = 0.00025;
+            $weightDifferenceThreshold = 0.5;
+            $isSmallImage = true;
+            $qualities[] = 95;
+        }
 
         # Try every quality setting from the lowest to the highest, looking for one that matches our ideal/acceptable difference percentage.
         # If an acceptable one is found first, the next quality level will be checked to see if it's ideal and if the weight isn't much bigger (based on $weightDifferenceThreshold)
@@ -81,17 +93,19 @@ abstract class Optimize {
         if (!$bestPath) {
             $highestQuality = $attempts[count($attempts) - 1];
 
-            foreach ($attempts as $attempt) {
-                if ($attempt['path'] == $highestQuality['path']) {
-                    continue;
-                }
+            if (!$isSmallImage) {
+                foreach ($attempts as $attempt) {
+                    if ($attempt['path'] == $highestQuality['path']) {
+                        continue;
+                    }
 
-                // Require at least [15% or 15kb] filesize savings for at most 15% higher difference percentage
-                $visualDifference = 1 - $attempt['difference'] / $highestQuality['difference'];
-                $filesizeSavingsPercentage = 1 - filesize($attempt['path']) / filesize($highestQuality['path']);
-                if ($visualDifference <= .15 && ($filesizeSavingsPercentage >= .15 || $filesizeSavingsPercentage * filesize($attempt['path']) > (1024 * 15))) {
-                    $bestPath = $attempt['path'];
-                    break;
+                    // Require at least [15% or 15kb] filesize savings for at most 15% higher difference percentage
+                    $visualDifference = 1 - $attempt['difference'] / $highestQuality['difference'];
+                    $filesizeSavingsPercentage = 1 - filesize($attempt['path']) / filesize($highestQuality['path']);
+                    if ($visualDifference <= .15 && ($filesizeSavingsPercentage >= .15 || $filesizeSavingsPercentage * filesize($attempt['path']) > (1024 * 15))) {
+                        $bestPath = $attempt['path'];
+                        break;
+                    }
                 }
             }
 
