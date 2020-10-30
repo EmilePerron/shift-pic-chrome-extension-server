@@ -10,6 +10,7 @@ use App\Lib\ColorProfile;
 use App\Lib\Unsplash;
 use App\Lib\Usage;
 use App\Lib\License;
+use App\Lib\Stats;
 use App\Lib\Image;
 
 class ProcessController extends Controller {
@@ -31,6 +32,7 @@ class ProcessController extends Controller {
         $response = $this->buildPublicResponse($images);
 
         Usage::increment($_POST['license']);
+        Stats::incrementProcessed();
 
         return $this->jsonResponse($response);
     }
